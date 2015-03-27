@@ -77,7 +77,7 @@ static inline bool CompareDrawable2Ds(Drawable2D* lhs, Drawable2D* rhs)
 
     Material* lhsUsedMaterial = lhs->GetMaterial();
     Material* rhsUsedMaterial = rhs->GetMaterial();
-    if (lhsUsedMaterial != rhsUsedMaterial)
+    if (lhsUsedMaterial && rhsUsedMaterial && lhsUsedMaterial != rhsUsedMaterial)
         return lhsUsedMaterial->GetNameHash() < rhsUsedMaterial->GetNameHash();
 
     return lhs->GetID() < rhs->GetID();
@@ -434,7 +434,7 @@ Material* Renderer2D::CreateMaterial(Texture2D* texture, BlendMode blendMode)
         material->SetName(blendModeNames[blendMode]);
 
     Technique* tech = new Technique(context_);
-    Pass* pass = tech->CreatePass(PASS_ALPHA);
+    Pass* pass = tech->CreatePass("alpha");
     pass->SetBlendMode(blendMode);
 
     pass->SetVertexShader("Urho2D");

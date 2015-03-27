@@ -68,7 +68,7 @@ if (URHO3D_LUA)
         list (APPEND GEN_CPP_FILES ${GEN_CPP_FILE})
         file (GLOB PKG_FILES LuaScript/pkgs/${DIR}/*.pkg)
         add_custom_command (OUTPUT ${GEN_CPP_FILE}
-            COMMAND ${CMAKE_BINARY_DIR}/bin/tool/tolua++ -L ToCppHook.lua -o ${CMAKE_CURRENT_BINARY_DIR}/${GEN_CPP_FILE} ${NAME}
+            COMMAND ${CMAKE_BINARY_DIR}/bin/tool/tolua++ -E ${CMAKE_PROJECT_NAME} -L ToCppHook.lua -o ${CMAKE_CURRENT_BINARY_DIR}/${GEN_CPP_FILE} ${NAME}
             DEPENDS tolua++ ${API_PKG_FILE} ${PKG_FILES} LuaScript/pkgs/ToCppHook.lua
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/LuaScript/pkgs
             COMMENT "Generating tolua++ API binding on the fly for ${DIR}")
@@ -127,9 +127,14 @@ foreach (DIR Navigation Network Physics Urho2D)
 endforeach ()
 if (URHO3D_OPENGL)
     # Exclude the opposite source directory
-    list (APPEND EXCLUDED_SOURCE_DIRS Graphics/Direct3D9)
+    list (APPEND EXCLUDED_SOURCE_DIRS Graphics/Direct3D9 Graphics/Direct3D11)
 else ()
     list (APPEND EXCLUDED_SOURCE_DIRS Graphics/OpenGL)
+    if (URHO3D_D3D11)
+        list (APPEND EXCLUDED_SOURCE_DIRS Graphics/Direct3D9)
+    else ()
+        list (APPEND EXCLUDED_SOURCE_DIRS Graphics/Direct3D11)
+    endif ()
 endif ()
 if (APPLE AND NOT IOS)
     set (GLOB_OBJC_PATTERN *.m)     # Should only pick up MacFileWatcher.m for MacOSX platform at the moment
@@ -172,9 +177,6 @@ if (NOT ANDROID AND NOT EMSCRIPTEN)
     endif ()
 endif ()
 install (TARGETS ${TARGET_NAME} RUNTIME DESTINATION ${DEST_RUNTIME_DIR} LIBRARY DESTINATION ${DEST_LIBRARY_DIR} ARCHIVE DESTINATION ${DEST_LIBRARY_DIR})
-if (NOT GIT_EXIT_CODE EQUAL 0)
-    add_dependencies (${TARGET_NAME} ${STATIC_LIBRARY_TARGETS})
-endif ()
 
 # Setup dependency frameworks and libraries
 if (APPLE)

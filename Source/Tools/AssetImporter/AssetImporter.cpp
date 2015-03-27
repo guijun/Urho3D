@@ -113,6 +113,7 @@ bool noHierarchy_ = false;
 bool noMaterials_ = false;
 bool noTextures_ = false;
 bool noMaterialDiffuseColor_ = false;
+bool noEmptyNodes_ = false;
 bool saveMaterialList_ = false;
 bool includeNonSkinningBones_ = false;
 bool verboseLog_ = false;
@@ -121,6 +122,7 @@ bool noOverwriteMaterial_ = false;
 bool noOverwriteTexture_ = false;
 bool noOverwriteNewerTexture_ = false;
 bool checkUniqueModel_ = true;
+unsigned maxBones_ = 64;
 Vector<String> nonSkinningBoneIncludes_;
 Vector<String> nonSkinningBoneExcludes_;
 
@@ -144,6 +146,7 @@ void BuildAndSaveAnimations(OutModel* model = 0);
 
 void ExportScene(const String& outName, bool asPrefab);
 void CollectSceneModels(OutScene& scene, aiNode* node);
+void CreateHierarchy(Scene* scene, aiNode* srcNode, HashMap<aiNode*, Node*>& nodeMapping);
 Node* CreateSceneNode(Scene* scene, aiNode* srcNode, HashMap<aiNode*, Node*>& nodeMapping);
 void BuildAndSaveScene(OutScene& scene, bool asPrefab);
 
@@ -228,6 +231,8 @@ void Run(const Vector<String>& arguments)
             "-ns         Do not create subdirectories for resources\n"
             "-nz         Do not create a zone and a directional light (scene mode only)\n"
             "-nf         Do not fix infacing normals\n"
+            "-ne         Do not save empty nodes (scene mode only)\n"
+            "-mb <x>     Maximum number of bones per submesh. Default 64\n"
             "-p <path>   Set path for scene resources. Default is output file path\n"
             "-r <name>   Use the named scene node as root node\n"
             "-f <freq>   Animation tick frequency to use if unspecified. Default 4800\n"
@@ -314,6 +319,10 @@ void Run(const Vector<String>& arguments)
                     noHierarchy_ = true;
                     break;
 
+                case 'e':
+                    noEmptyNodes_ = true;
+                    break;
+
                 case 's':
                     useSubdirs_ = false;
                     break;
@@ -330,6 +339,13 @@ void Run(const Vector<String>& arguments)
                     flags &= ~aiProcess_FixInfacingNormals;
                     break;
                 }
+            }
+            else if (argument == "mb" && !value.Empty())
+            {
+                maxBones_ = ToUInt(value);
+                if (maxBones_ < 1)
+                    maxBones_ = 1;
+                ++i;
             }
             else if (argument == "p" && !value.Empty())
             {
@@ -898,7 +914,7 @@ void BuildAndSaveModel(OutModel& model)
         outModel->SetNumGeometryLodLevels(destGeomIndex, 1);
         outModel->SetGeometry(destGeomIndex, 0, geom);
         outModel->SetGeometryCenter(destGeomIndex, center);
-        if (model.bones_.Size() > MAX_SKIN_MATRICES)
+        if (model.bones_.Size() > maxBones_)
             allBoneMappings.Push(boneMappings);
         
         startVertexOffset += mesh->mNumVertices;
@@ -959,7 +975,7 @@ void BuildAndSaveModel(OutModel& model)
         }
         
         outModel->SetSkeleton(skeleton);
-        if (model.bones_.Size() > MAX_SKIN_MATRICES)
+        if (model.bones_.Size() > maxBones_)
             outModel->SetGeometryBoneMappings(allBoneMappings);
     }
     
@@ -1258,6 +1274,13 @@ void CollectSceneModels(OutScene& scene, aiNode* node)
         CollectSceneModels(scene, node->mChildren[i]);
 }
 
+void CreateHierarchy(Scene* scene, aiNode* srcNode, HashMap<aiNode*, Node*>& nodeMapping)
+{
+    CreateSceneNode(scene, srcNode, nodeMapping);
+    for (unsigned i = 0; i < srcNode->mNumChildren; ++i)
+        CreateHierarchy(scene, srcNode->mChildren[i], nodeMapping);
+}
+
 Node* CreateSceneNode(Scene* scene, aiNode* srcNode, HashMap<aiNode*, Node*>& nodeMapping)
 {
     if (nodeMapping.Contains(srcNode))
@@ -1346,10 +1369,23 @@ void BuildAndSaveScene(OutScene& scene, bool asPrefab)
     ResourceCache* cache = context_->GetSubsystem<ResourceCache>();
 
     HashMap<aiNode*, Node*> nodeMapping;
+
     Node* outRootNode = 0;
-    if (asPrefab || !noHierarchy_)
+    if (asPrefab)
         outRootNode = CreateSceneNode(outScene, rootNode_, nodeMapping);
-    
+    else
+    {
+        // If not saving as a prefab, associate the root node with the scene first to prevent unnecessary creation of a root
+        // However do not do that if the root node does not have an identity matrix, or itself contains a model
+        // (models at the Urho scene root are not preferable)
+        if (ToMatrix3x4(rootNode_->mTransformation).Equals(Matrix3x4::IDENTITY) && !scene.nodes_.Contains(rootNode_))
+           nodeMapping[rootNode_] = outScene;
+    }
+
+    // If is allowed to export empty nodes, export the full Assimp node hierarchy first
+    if (!noHierarchy_ && !noEmptyNodes_)
+        CreateHierarchy(outScene, rootNode_, nodeMapping);
+
     // Create geometry nodes
     for (unsigned i = 0; i < scene.nodes_.Size(); ++i)
     {
@@ -1865,13 +1901,13 @@ void GetBlendData(OutModel& model, aiMesh* mesh, PODVector<unsigned>& boneMappin
     boneMappings.Clear();
     
     // If model has more bones than can fit vertex shader parameters, write the per-geometry mappings
-    if (model.bones_.Size() > MAX_SKIN_MATRICES)
+    if (model.bones_.Size() > maxBones_)
     {
-        if (mesh->mNumBones > MAX_SKIN_MATRICES)
+        if (mesh->mNumBones > maxBones_)
         {
             ErrorExit(
-                "Geometry (submesh) has over 64 bone influences. Try splitting to more submeshes\n"
-                "that each stay at 64 bones or below."
+                "Geometry (submesh) has over " + String(maxBones_) + " bone influences. Try splitting to more submeshes\n"
+                "that each stay at " + String(maxBones_) + " bones or below."
             );
         }
         boneMappings.Resize(mesh->mNumBones);
