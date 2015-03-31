@@ -93,7 +93,7 @@ A number of build options can be defined when invoking the build scripts or when
 |URHO3D_TESTING       |0|Enable testing support|
 |URHO3D_TEST_TIMEOUT  |*|Number of seconds to test run the executables (when testing support is enabled only), default to 10 on Emscripten platform and 5 on other platforms|
 |URHO3D_OPENGL        |0|Use OpenGL instead of Direct3D (Windows platform only)|
-|URHO3D_D3D11         |0|Use Direct3D11 instead of Direct3D9 (Windows platform only). Overrides URHO3D_OPENGL option.|
+|URHO3D_D3D11         |0|Use Direct3D11 instead of Direct3D9 (Windows platform only); overrides URHO3D_OPENGL option|
 |URHO3D_STATIC_RUNTIME|0|Use static C/C++ runtime libraries and eliminate the need for runtime DLLs installation (VS only)|
 |URHO3D_WIN32_CONSOLE |0|Use console main() as entry point when setting up Windows executable targets (Windows platform only)|
 |URHO3D_MACOSX_BUNDLE |0|Use MACOSX_BUNDLE when setting up Mac OS X executable targets (Xcode native build only)|
@@ -548,14 +548,14 @@ rake cmake [<generator>] [<platform>] [<option>=<value> [<option>=<value>]] [[<p
 
 To build:
 \verbatim
-rake make [<platform>] [<option>=<value> [<option>=<value>]] [[<platform>_]build_tree=/path/to/build-tree] [numjobs=8] [clean_first] [unfilter]
+rake make [<platform>] [<option>=<value> [<option>=<value>]] [[<platform>_]build_tree=/path/to/build-tree] [numjobs=n] [clean_first] [unfilter]
 \endverbatim
 
 The default <generator> when not specified is 'generic', which let CMake to detect and choose what generator is available in the host to use. The possible values are: 'codeblocks', 'eclipse', 'macosx', 'ninja', 'vs2008', 'vs2010', 'vs2012', 'vs2013', 'vs2015'.
 
 The default <platform> when not specified is 'native'. The possible values are: 'android', 'emscripten', 'ios', 'mingw', 'rpi'. Naturally this influences the compiler toolchain being used in the generated build tree.
 
-When using the 'rake cmake' task, the <option>=\<value> pairs are optional build options supported by our build scripts as usual. However, the format here does not expect a leading '-D' for each pair. When using the 'rake make' task, the <option>=\<value> pairs are optional build options supported by the respective build tools. For example on iOS platform using 'xcodebuild' build tool, one could pass the '-sdk' option as follows: 'rake make ios sdk=iphonesimulator'. Note the absense of leading '-' character in the example. To build a specific built-in target in the project, use the 'target' option, e.g. 'rake make target=install'. In a multi-config project, such as Xcode project or VS solution, use the 'config' option to choose which build configuration to use, e.g. 'rake make config=Release'. For Xcode project building using 'rake make' task, you may optional install the 'xcpretty' filter to address the verbosity of the 'xcodebuild' tool from its standard output stream. On the other hand, pass the 'unfilter' option to get the output from 'xcodebuild' tool unfiltered regardless the 'xcpretty' is installed or not. You can pass the 'clean_first' option to perform a clean build. The 'numjobs' option is only applicable for 'make' tool where it defaults to 8 when not specified explicitly.
+When using the 'rake cmake' task, the <option>=\<value> pairs are optional build options supported by our build scripts as usual. However, the format here does not expect a leading '-D' for each pair. When using the 'rake make' task, the <option>=\<value> pairs are optional build options supported by the respective build tools. For example on iOS platform using 'xcodebuild' build tool, one could pass the '-sdk' option as follows: 'rake make ios sdk=iphonesimulator'. Note the absense of leading '-' character in the example. To build a specific built-in target in the project, use the 'target' option, e.g. 'rake make target=install'. In a multi-config project, such as Xcode project or VS solution, use the 'config' option to choose which build configuration to use, e.g. 'rake make config=Release'. For Xcode project building using 'rake make' task, you may optional install the 'xcpretty' filter to address the verbosity of the 'xcodebuild' tool from its standard output stream. On the other hand, pass the 'unfilter' option to get the output from 'xcodebuild' tool unfiltered regardless the 'xcpretty' is installed or not. You can pass the 'clean_first' option to perform a clean build. By default this task invokes the respective build tool to use all the logical CPU cores available, but you can use the 'numjobs' option to override this default.
 
 Use the 'build_tree' option to set the path to the desired build tree location. When not specified then the build tree location would be defaulted to '../<platform>-Build', relative to the project root. To avoid repeating the customized build tree locations for each platform, you can set and export them as environment variables. The '<platform_>build_tree' option takes precedence over normal 'build_tree' option. For example with these commands below, the native and RPI build tree will be generated in the ~/custom-native-Build and ~/custom-rpi-Build, respectively, and then build from there.
 
