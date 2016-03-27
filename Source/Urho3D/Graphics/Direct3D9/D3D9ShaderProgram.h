@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2016 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -37,12 +37,12 @@ public:
     {
         const HashMap<StringHash, ShaderParameter>& vsParams = vertexShader->GetParameters();
         for (HashMap<StringHash, ShaderParameter>::ConstIterator i = vsParams.Begin(); i != vsParams.End(); ++i)
-        parameters_[i->first_] = i->second_;
+            parameters_[i->first_] = i->second_;
 
         const HashMap<StringHash, ShaderParameter>& psParams = pixelShader->GetParameters();
         for (HashMap<StringHash, ShaderParameter>::ConstIterator i = psParams.Begin(); i != psParams.End(); ++i)
             parameters_[i->first_] = i->second_;
-    
+
         // Optimize shader parameter lookup by rehashing to next power of two
         parameters_.Rehash(NextPowerOfTwo(parameters_.Size()));
     }

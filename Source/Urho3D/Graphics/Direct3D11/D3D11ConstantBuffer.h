@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2016 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -22,10 +22,10 @@
 
 #pragma once
 
-#include "../../Graphics/GPUObject.h"
-#include "../../Graphics/GraphicsDefs.h"
 #include "../../Container/ArrayPtr.h"
 #include "../../Core/Object.h"
+#include "../../Graphics/GPUObject.h"
+#include "../../Graphics/GraphicsDefs.h"
 
 namespace Urho3D
 {
@@ -33,17 +33,17 @@ namespace Urho3D
 /// Hardware constant buffer.
 class URHO3D_API ConstantBuffer : public Object, public GPUObject
 {
-    OBJECT(ConstantBuffer);
-    
+    URHO3D_OBJECT(ConstantBuffer, Object);
+
 public:
     /// Construct.
     ConstantBuffer(Context* context);
     /// Destruct.
     virtual ~ConstantBuffer();
-    
+
     /// Release buffer.
     virtual void Release();
-    
+
     /// Set size and create GPU-side buffer. Return true on success.
     bool SetSize(unsigned size);
     /// Set a generic parameter and mark buffer dirty.
@@ -55,13 +55,11 @@ public:
 
     /// Return size.
     unsigned GetSize() const { return size_; }
+
     /// Return whether has unapplied data.
     bool IsDirty() const { return dirty_; }
 
 private:
-    /// Create buffer.
-    bool Create();
-
     /// Shadow data.
     SharedArrayPtr<unsigned char> shadowData_;
     /// Buffer byte size.

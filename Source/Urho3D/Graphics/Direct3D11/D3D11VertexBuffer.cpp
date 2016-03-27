@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2016 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -20,10 +20,12 @@
 // THE SOFTWARE.
 //
 
+#include "../../Precompiled.h"
+
 #include "../../Graphics/Graphics.h"
 #include "../../Graphics/GraphicsImpl.h"
-#include "../../IO/Log.h"
 #include "../../Graphics/VertexBuffer.h"
+#include "../../IO/Log.h"
 
 #include "../../DebugNew.h"
 
@@ -44,7 +46,8 @@ const unsigned VertexBuffer::elementSize[] =
     4 * sizeof(unsigned char), // Blendindices
     4 * sizeof(float), // Instancematrix1
     4 * sizeof(float), // Instancematrix2
-    4 * sizeof(float) // Instancematrix3
+    4 * sizeof(float), // Instancematrix3
+    sizeof(int) // Objectindex
 };
 
 const char* VertexBuffer::elementSemantics[] =
@@ -61,7 +64,8 @@ const char* VertexBuffer::elementSemantics[] =
     "BLENDINDICES",
     "TEXCOORD",
     "TEXCOORD",
-    "TEXCOORD"
+    "TEXCOORD",
+    "OBJECTINDEX"
 };
 
 const unsigned VertexBuffer::elementSemanticIndices[] =
@@ -78,7 +82,8 @@ const unsigned VertexBuffer::elementSemanticIndices[] =
     0,
     2,
     3,
-    4
+    4,
+    0
 };
 
 const unsigned VertexBuffer::elementFormats[] =
@@ -95,12 +100,13 @@ const unsigned VertexBuffer::elementFormats[] =
     DXGI_FORMAT_R8G8B8A8_UINT,
     DXGI_FORMAT_R32G32B32A32_FLOAT,
     DXGI_FORMAT_R32G32B32A32_FLOAT,
-    DXGI_FORMAT_R32G32B32A32_FLOAT
+    DXGI_FORMAT_R32G32B32A32_FLOAT,
+    DXGI_FORMAT_R32_SINT
 };
 
-VertexBuffer::VertexBuffer(Context* context) :
+VertexBuffer::VertexBuffer(Context* context, bool forceHeadless) :
     Object(context),
-    GPUObject(GetSubsystem<Graphics>()),
+    GPUObject(forceHeadless ? (Graphics*)0 : GetSubsystem<Graphics>()),
     vertexCount_(0),
     elementMask_(0),
     lockState_(LOCK_NONE),
@@ -111,7 +117,7 @@ VertexBuffer::VertexBuffer(Context* context) :
     shadowed_(false)
 {
     UpdateOffsets();
-    
+
     // Force shadowing mode if graphics subsystem does not exist
     if (!graphics_)
         shadowed_ = true;
@@ -125,21 +131,17 @@ VertexBuffer::~VertexBuffer()
 void VertexBuffer::Release()
 {
     Unlock();
-    
-    if (object_)
+
+    if (graphics_)
     {
-        if (!graphics_)
-            return;
-        
         for (unsigned i = 0; i < MAX_VERTEX_STREAMS; ++i)
         {
             if (graphics_->GetVertexBuffer(i) == this)
                 graphics_->SetVertexBuffer(0);
         }
-        
-        ((ID3D11Buffer*)object_)->Release();
-        object_ = 0;
     }
+
+    URHO3D_SAFE_RELEASE(object_);
 }
 
 void VertexBuffer::SetShadowed(bool enable)
@@ -147,14 +149,14 @@ void VertexBuffer::SetShadowed(bool enable)
     // If no graphics subsystem, can not disable shadowing
     if (!graphics_)
         enable = true;
-    
+
     if (enable != shadowed_)
     {
         if (enable && vertexSize_ && vertexCount_)
             shadowData_ = new unsigned char[vertexCount_ * vertexSize_];
         else
             shadowData_.Reset();
-        
+
         shadowed_ = enable;
     }
 }
@@ -162,18 +164,18 @@ void VertexBuffer::SetShadowed(bool enable)
 bool VertexBuffer::SetSize(unsigned vertexCount, unsigned elementMask, bool dynamic)
 {
     Unlock();
-    
+
     dynamic_ = dynamic;
     vertexCount_ = vertexCount;
     elementMask_ = elementMask;
-    
+
     UpdateOffsets();
-    
+
     if (shadowed_ && vertexCount_ && vertexSize_)
         shadowData_ = new unsigned char[vertexCount_ * vertexSize_];
     else
         shadowData_.Reset();
-    
+
     return Create();
 }
 
@@ -181,19 +183,19 @@ bool VertexBuffer::SetData(const void* data)
 {
     if (!data)
     {
-        LOGERROR("Null pointer for vertex buffer data");
+        URHO3D_LOGERROR("Null pointer for vertex buffer data");
         return false;
     }
-    
+
     if (!vertexSize_)
     {
-        LOGERROR("Vertex elements not defined, can not set vertex buffer data");
+        URHO3D_LOGERROR("Vertex elements not defined, can not set vertex buffer data");
         return false;
     }
-    
+
     if (shadowData_ && data != shadowData_.Get())
         memcpy(shadowData_.Get(), data, vertexCount_ * vertexSize_);
-    
+
     if (object_)
     {
         if (dynamic_)
@@ -220,7 +222,7 @@ bool VertexBuffer::SetData(const void* data)
             graphics_->GetImpl()->GetDeviceContext()->UpdateSubresource((ID3D11Buffer*)object_, 0, &destBox, data, 0, 0);
         }
     }
-    
+
     return true;
 }
 
@@ -228,31 +230,31 @@ bool VertexBuffer::SetDataRange(const void* data, unsigned start, unsigned count
 {
     if (start == 0 && count == vertexCount_)
         return SetData(data);
-    
+
     if (!data)
     {
-        LOGERROR("Null pointer for vertex buffer data");
+        URHO3D_LOGERROR("Null pointer for vertex buffer data");
         return false;
     }
-    
+
     if (!vertexSize_)
     {
-        LOGERROR("Vertex elements not defined, can not set vertex buffer data");
+        URHO3D_LOGERROR("Vertex elements not defined, can not set vertex buffer data");
         return false;
     }
-    
+
     if (start + count > vertexCount_)
     {
-        LOGERROR("Illegal range for setting new vertex buffer data");
+        URHO3D_LOGERROR("Illegal range for setting new vertex buffer data");
         return false;
     }
-    
+
     if (!count)
         return true;
-    
+
     if (shadowData_ && shadowData_.Get() + start * vertexSize_ != data)
         memcpy(shadowData_.Get() + start * vertexSize_, data, count * vertexSize_);
-    
+
     if (object_)
     {
         if (dynamic_)
@@ -287,28 +289,28 @@ void* VertexBuffer::Lock(unsigned start, unsigned count, bool discard)
 {
     if (lockState_ != LOCK_NONE)
     {
-        LOGERROR("Vertex buffer already locked");
+        URHO3D_LOGERROR("Vertex buffer already locked");
         return 0;
     }
-    
+
     if (!vertexSize_)
     {
-        LOGERROR("Vertex elements not defined, can not lock vertex buffer");
+        URHO3D_LOGERROR("Vertex elements not defined, can not lock vertex buffer");
         return 0;
     }
-    
+
     if (start + count > vertexCount_)
     {
-        LOGERROR("Illegal range for locking vertex buffer");
+        URHO3D_LOGERROR("Illegal range for locking vertex buffer");
         return 0;
     }
-    
+
     if (!count)
         return 0;
-    
+
     lockStart_ = start;
     lockCount_ = count;
-    
+
     // Because shadow data must be kept in sync, can only lock hardware buffer if not shadowed
     if (object_ && !shadowData_ && dynamic_)
         return MapBuffer(start, count, discard);
@@ -334,12 +336,12 @@ void VertexBuffer::Unlock()
     case LOCK_HARDWARE:
         UnmapBuffer();
         break;
-        
+
     case LOCK_SHADOW:
         SetDataRange(shadowData_.Get() + lockStart_ * vertexSize_, lockStart_, lockCount_);
         lockState_ = LOCK_NONE;
         break;
-        
+
     case LOCK_SCRATCH:
         SetDataRange(lockScratchData_, lockStart_, lockCount_);
         if (graphics_)
@@ -347,6 +349,8 @@ void VertexBuffer::Unlock()
         lockScratchData_ = 0;
         lockState_ = LOCK_NONE;
         break;
+
+    default: break;
     }
 }
 
@@ -374,49 +378,49 @@ unsigned long long VertexBuffer::GetBufferHash(unsigned streamIndex, unsigned us
         maskHash = ((unsigned long long)elementMask_) * 0x100000000ULL;
     else
         maskHash = ((unsigned long long)useMask) * 0x100000000ULL;
-    
+
     bufferHash |= maskHash;
     bufferHash <<= streamIndex * MAX_VERTEX_ELEMENTS;
-    
+
     return bufferHash;
 }
 
 unsigned VertexBuffer::GetVertexSize(unsigned elementMask)
 {
     unsigned vertexSize = 0;
-    
+
     for (unsigned i = 0; i < MAX_VERTEX_ELEMENTS; ++i)
     {
         if (elementMask & (1 << i))
             vertexSize += elementSize[i];
     }
-    
+
     return vertexSize;
 }
 
 unsigned VertexBuffer::GetElementOffset(unsigned elementMask, VertexElement element)
 {
     unsigned offset = 0;
-    
+
     for (unsigned i = 0; i < MAX_VERTEX_ELEMENTS; ++i)
     {
         if (i == element)
             break;
-        
+
         if (elementMask & (1 << i))
             offset += elementSize[i];
     }
-    
+
     return offset;
 }
 
 bool VertexBuffer::Create()
 {
     Release();
-    
+
     if (!vertexCount_ || !elementMask_)
         return true;
-    
+
     if (graphics_)
     {
         D3D11_BUFFER_DESC bufferDesc;
@@ -424,17 +428,17 @@ bool VertexBuffer::Create()
         bufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
         bufferDesc.CPUAccessFlags = dynamic_ ? D3D11_CPU_ACCESS_WRITE : 0;
         bufferDesc.Usage = dynamic_ ? D3D11_USAGE_DYNAMIC : D3D11_USAGE_DEFAULT;
-        bufferDesc.ByteWidth = (unsigned)(vertexCount_ * vertexSize_);
+        bufferDesc.ByteWidth = (UINT)(vertexCount_ * vertexSize_);
 
-        graphics_->GetImpl()->GetDevice()->CreateBuffer(&bufferDesc, 0, (ID3D11Buffer**)&object_);
-
-        if (!object_)
+        HRESULT hr = graphics_->GetImpl()->GetDevice()->CreateBuffer(&bufferDesc, 0, (ID3D11Buffer**)&object_);
+        if (FAILED(hr))
         {
-            LOGERROR("Failed to create vertex buffer");
+            URHO3D_SAFE_RELEASE(object_);
+            URHO3D_LOGD3DERROR("Failed to create vertex buffer", hr);
             return false;
         }
     }
-    
+
     return true;
 }
 
@@ -449,21 +453,23 @@ bool VertexBuffer::UpdateToGPU()
 void* VertexBuffer::MapBuffer(unsigned start, unsigned count, bool discard)
 {
     void* hwData = 0;
-    
+
     if (object_)
     {
         D3D11_MAPPED_SUBRESOURCE mappedData;
         mappedData.pData = 0;
 
-        graphics_->GetImpl()->GetDeviceContext()->Map((ID3D11Buffer*)object_, 0, discard ? D3D11_MAP_WRITE_DISCARD :
+        HRESULT hr = graphics_->GetImpl()->GetDeviceContext()->Map((ID3D11Buffer*)object_, 0, discard ? D3D11_MAP_WRITE_DISCARD :
             D3D11_MAP_WRITE, 0, &mappedData);
-        hwData = mappedData.pData;
-        if (!hwData)
-            LOGERROR("Failed to map vertex buffer");
+        if (FAILED(hr) || !mappedData.pData)
+            URHO3D_LOGD3DERROR("Failed to map vertex buffer", hr);
         else
+        {
+            hwData = mappedData.pData;
             lockState_ = LOCK_HARDWARE;
+        }
     }
-    
+
     return hwData;
 }
 

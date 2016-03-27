@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2016 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -20,9 +20,10 @@
 // THE SOFTWARE.
 //
 
+#include "../../Precompiled.h"
+
 #include "../../Graphics/Graphics.h"
 #include "../../Graphics/GraphicsImpl.h"
-#include "../../Graphics/ShaderVariation.h"
 #include "../../Graphics/VertexBuffer.h"
 #include "../../Graphics/VertexDeclaration.h"
 #include "../../IO/Log.h"
@@ -32,7 +33,8 @@
 namespace Urho3D
 {
 
-VertexDeclaration::VertexDeclaration(Graphics* graphics, ShaderVariation* vertexShader, VertexBuffer** vertexBuffers, unsigned* elementMasks) :
+VertexDeclaration::VertexDeclaration(Graphics* graphics, ShaderVariation* vertexShader, VertexBuffer** vertexBuffers,
+    unsigned* elementMasks) :
     inputLayout_(0)
 {
     PODVector<D3D11_INPUT_ELEMENT_DESC> elementDescs;
@@ -51,7 +53,7 @@ VertexDeclaration::VertexDeclaration(Graphics* graphics, ShaderVariation* vertex
                     newDesc.SemanticName = VertexBuffer::elementSemantics[j];
                     newDesc.SemanticIndex = VertexBuffer::elementSemanticIndices[j];
                     newDesc.Format = (DXGI_FORMAT)VertexBuffer::elementFormats[j];
-                    newDesc.InputSlot = (unsigned)i;
+                    newDesc.InputSlot = (UINT)i;
                     newDesc.AlignedByteOffset = vertexBuffers[i]->GetElementOffset((VertexElement)j);
                     newDesc.InputSlotClass = (j >= ELEMENT_INSTANCEMATRIX1 && j <= ELEMENT_INSTANCEMATRIX3) ?
                         D3D11_INPUT_PER_INSTANCE_DATA : D3D11_INPUT_PER_VERTEX_DATA;
@@ -66,25 +68,21 @@ VertexDeclaration::VertexDeclaration(Graphics* graphics, ShaderVariation* vertex
     if (elementDescs.Empty())
         return;
 
-    ID3D11InputLayout* d3dInputLayout = 0;
     const PODVector<unsigned char>& byteCode = vertexShader->GetByteCode();
 
-    graphics->GetImpl()->GetDevice()->CreateInputLayout(&elementDescs[0], (unsigned)elementDescs.Size(), &byteCode[0],
-        byteCode.Size(), &d3dInputLayout);
-    if (d3dInputLayout)
-        inputLayout_ = d3dInputLayout;
-    else
-        LOGERRORF("Failed to create input layout for shader %s, missing element mask %d",
-            vertexShader->GetFullName().CString(), vertexShader->GetElementMask() & ~vbElementMask);
+    HRESULT hr = graphics->GetImpl()->GetDevice()->CreateInputLayout(&elementDescs[0], (UINT)elementDescs.Size(), &byteCode[0],
+        byteCode.Size(), (ID3D11InputLayout**)&inputLayout_);
+    if (FAILED(hr))
+    {
+        URHO3D_SAFE_RELEASE(inputLayout_);
+        URHO3D_LOGERRORF("Failed to create input layout for shader %s, missing element mask %d (HRESULT %x)",
+            vertexShader->GetFullName().CString(), vertexShader->GetElementMask() & ~vbElementMask, (unsigned)hr);
+    }
 }
 
 VertexDeclaration::~VertexDeclaration()
 {
-    if (inputLayout_)
-    {
-        ((ID3D11InputLayout*)inputLayout_)->Release();
-        inputLayout_ = 0;
-    }
+    URHO3D_SAFE_RELEASE(inputLayout_);
 }
 
 }

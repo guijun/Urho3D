@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2016 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -22,11 +22,11 @@
 
 #pragma once
 
-#include "../../Math/Color.h"
 #include "../../Container/HashMap.h"
 #include "../../Core/Timer.h"
+#include "../../Math/Color.h"
 
-#if defined(ANDROID) || defined (RPI) || defined (EMSCRIPTEN)
+#if defined(ANDROID) || defined (RPI) || defined (__EMSCRIPTEN__)
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
 #elif defined(IOS)
@@ -38,6 +38,12 @@
 
 #ifndef GL_COMPRESSED_RGBA_S3TC_DXT1_EXT
 #define GL_COMPRESSED_RGBA_S3TC_DXT1_EXT 0x83f1
+#endif
+#ifndef GL_COMPRESSED_RGBA_S3TC_DXT3_EXT
+#define GL_COMPRESSED_RGBA_S3TC_DXT3_EXT 0x83f2
+#endif
+#ifndef GL_COMPRESSED_RGBA_S3TC_DXT5_EXT
+#define GL_COMPRESSED_RGBA_S3TC_DXT5_EXT 0x83f3
 #endif
 #ifndef GL_ETC1_RGB8_OES
 #define GL_ETC1_RGB8_OES 0x8d64
@@ -95,8 +101,11 @@ class URHO3D_API GraphicsImpl
 public:
     /// Construct.
     GraphicsImpl();
+
     /// Return the SDL window.
     SDL_Window* GetWindow() const { return window_; }
+    /// Return the GL Context.
+    const SDL_GLContext& GetGLContext() { return context_; }
 
 private:
     /// SDL window.

@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2016 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -20,14 +20,17 @@
 // THE SOFTWARE.
 //
 
+#include "../Precompiled.h"
+
 #include "../Core/Context.h"
 #include "../IO/Deserializer.h"
 #include "../IO/Log.h"
+#include "../IO/Serializer.h"
+#include "../Resource/XMLElement.h"
+#include "../Resource/JSONValue.h"
 #include "../Scene/ReplicationState.h"
 #include "../Scene/SceneEvents.h"
 #include "../Scene/Serializable.h"
-#include "../IO/Serializer.h"
-#include "../Resource/XMLElement.h"
 
 #include "../DebugNew.h"
 
@@ -138,6 +141,10 @@ void Serializable::OnSetAttribute(const AttributeInfo& attr, const Variant& src)
         *(reinterpret_cast<VariantVector*>(dest)) = src.GetVariantVector();
         break;
 
+    case VAR_STRINGVECTOR:
+        *(reinterpret_cast<StringVector*>(dest)) = src.GetStringVector();
+        break;
+
     case VAR_VARIANTMAP:
         *(reinterpret_cast<VariantMap*>(dest)) = src.GetVariantMap();
         break;
@@ -150,8 +157,12 @@ void Serializable::OnSetAttribute(const AttributeInfo& attr, const Variant& src)
         *(reinterpret_cast<IntVector2*>(dest)) = src.GetIntVector2();
         break;
 
+    case VAR_DOUBLE:
+        *(reinterpret_cast<double*>(dest)) = src.GetDouble();
+        break;
+
     default:
-        LOGERROR("Unsupported attribute type for OnSetAttribute()");
+        URHO3D_LOGERROR("Unsupported attribute type for OnSetAttribute()");
         return;
     }
 
@@ -230,6 +241,10 @@ void Serializable::OnGetAttribute(const AttributeInfo& attr, Variant& dest) cons
         dest = *(reinterpret_cast<const VariantVector*>(src));
         break;
 
+    case VAR_STRINGVECTOR:
+        dest = *(reinterpret_cast<const StringVector*>(src));
+        break;
+
     case VAR_VARIANTMAP:
         dest = *(reinterpret_cast<const VariantMap*>(src));
         break;
@@ -242,8 +257,12 @@ void Serializable::OnGetAttribute(const AttributeInfo& attr, Variant& dest) cons
         dest = *(reinterpret_cast<const IntVector2*>(src));
         break;
 
+    case VAR_DOUBLE:
+        dest = *(reinterpret_cast<const double*>(src));
+        break;
+
     default:
-        LOGERROR("Unsupported attribute type for OnGetAttribute()");
+        URHO3D_LOGERROR("Unsupported attribute type for OnGetAttribute()");
         return;
     }
 }
@@ -272,7 +291,7 @@ bool Serializable::Load(Deserializer& source, bool setInstanceDefault)
 
         if (source.IsEof())
         {
-            LOGERROR("Could not load " + GetTypeName() + ", stream not open or at end");
+            URHO3D_LOGERROR("Could not load " + GetTypeName() + ", stream not open or at end");
             return false;
         }
 
@@ -304,7 +323,7 @@ bool Serializable::Save(Serializer& dest) const
 
         if (!dest.WriteVariantData(value))
         {
-            LOGERROR("Could not save " + GetTypeName() + ", writing to stream failed");
+            URHO3D_LOGERROR("Could not save " + GetTypeName() + ", writing to stream failed");
             return false;
         }
     }
@@ -316,7 +335,7 @@ bool Serializable::LoadXML(const XMLElement& source, bool setInstanceDefault)
 {
     if (source.IsNull())
     {
-        LOGERROR("Could not load " + GetTypeName() + ", null source element");
+        URHO3D_LOGERROR("Could not load " + GetTypeName() + ", null source element");
         return false;
     }
 
@@ -360,7 +379,7 @@ bool Serializable::LoadXML(const XMLElement& source, bool setInstanceDefault)
                     if (enumFound)
                         varValue = enumValue;
                     else
-                        LOGWARNING("Unknown enum value " + value + " in attribute " + attr.name_);
+                        URHO3D_LOGWARNING("Unknown enum value " + value + " in attribute " + attr.name_);
                 }
                 else
                     varValue = attrElem.GetVariantValue(attr.type_);
@@ -384,9 +403,102 @@ bool Serializable::LoadXML(const XMLElement& source, bool setInstanceDefault)
         }
 
         if (!attempts)
-            LOGWARNING("Unknown attribute " + name + " in XML data");
+            URHO3D_LOGWARNING("Unknown attribute " + name + " in XML data");
 
         attrElem = attrElem.GetNext("attribute");
+    }
+
+    return true;
+}
+
+bool Serializable::LoadJSON(const JSONValue& source, bool setInstanceDefault)
+{
+    if (source.IsNull())
+    {
+        URHO3D_LOGERROR("Could not load " + GetTypeName() + ", null JSON source element");
+        return false;
+    }
+
+    const Vector<AttributeInfo>* attributes = GetAttributes();
+    if (!attributes)
+        return true;
+
+    // Get attributes value
+    JSONValue attributesValue = source.Get("attributes");
+    if (attributesValue.IsNull())
+        return true;
+    // Warn if the attributes value isn't an object
+    if (!attributesValue.IsObject())
+    {
+        URHO3D_LOGWARNING("'attributes' object is present in " + GetTypeName() + " but is not a JSON object; skipping load");
+        return true;
+    }
+
+    const JSONObject& attributesObject = attributesValue.GetObject();
+
+    unsigned startIndex = 0;
+
+    for (JSONObject::ConstIterator it = attributesObject.Begin(); it != attributesObject.End();)
+    {
+        String name = it->first_;
+        const JSONValue& value = it->second_;
+        unsigned i = startIndex;
+        unsigned attempts = attributes->Size();
+
+        while (attempts)
+        {
+            const AttributeInfo& attr = attributes->At(i);
+            if ((attr.mode_ & AM_FILE) && !attr.name_.Compare(name, true))
+            {
+                Variant varValue;
+
+                // If enums specified, do enum lookup ad int assignment. Otherwise assign variant directly
+                if (attr.enumNames_)
+                {
+                    String valueStr = value.GetString();
+                    bool enumFound = false;
+                    int enumValue = 0;
+                    const char** enumPtr = attr.enumNames_;
+                    while (*enumPtr)
+                    {
+                        if (!valueStr.Compare(*enumPtr, false))
+                        {
+                            enumFound = true;
+                            break;
+                        }
+                        ++enumPtr;
+                        ++enumValue;
+                    }
+                    if (enumFound)
+                        varValue = enumValue;
+                    else
+                        URHO3D_LOGWARNING("Unknown enum value " + valueStr + " in attribute " + attr.name_);
+                }
+                else
+                    varValue = value.GetVariantValue(attr.type_);
+
+                if (!varValue.IsEmpty())
+                {
+                    OnSetAttribute(attr, varValue);
+
+                    if (setInstanceDefault)
+                        SetInstanceDefault(attr.name_, varValue);
+                }
+
+                startIndex = (i + 1) % attributes->Size();
+                break;
+            }
+            else
+            {
+                i = (i + 1) % attributes->Size();
+                --attempts;
+            }
+        }
+
+        if (!attempts)
+            URHO3D_LOGWARNING("Unknown attribute " + name + " in JSON data");
+
+        it++;
     }
 
     return true;
@@ -396,7 +508,7 @@ bool Serializable::SaveXML(XMLElement& dest) const
 {
     if (dest.IsNull())
     {
-        LOGERROR("Could not save " + GetTypeName() + ", null destination element");
+        URHO3D_LOGERROR("Could not save " + GetTypeName() + ", null destination element");
         return false;
     }
 
@@ -434,17 +546,56 @@ bool Serializable::SaveXML(XMLElement& dest) const
     return true;
 }
 
+bool Serializable::SaveJSON(JSONValue& dest) const
+{
+    const Vector<AttributeInfo>* attributes = GetAttributes();
+    if (!attributes)
+        return true;
+
+    Variant value;
+    JSONValue attributesValue;
+
+    for (unsigned i = 0; i < attributes->Size(); ++i)
+    {
+        const AttributeInfo& attr = attributes->At(i);
+        if (!(attr.mode_ & AM_FILE))
+            continue;
+
+        OnGetAttribute(attr, value);
+        Variant defaultValue(GetAttributeDefault(i));
+
+        // In JSON serialization default values can be skipped. This will make the file easier to read or edit manually
+        if (value == defaultValue && !SaveDefaultAttributes())
+            continue;
+
+        JSONValue attrVal;
+        // If enums specified, set as an enum string. Otherwise set directly as a Variant
+        if (attr.enumNames_)
+        {
+            int enumValue = value.GetInt();
+            attrVal = attr.enumNames_[enumValue];
+        }
+        else
+            attrVal.SetVariantValue(value, context_);
+
+        attributesValue.Set(attr.name_, attrVal);
+    }
+    dest.Set("attributes", attributesValue);
+
+    return true;
+}
+
 bool Serializable::SetAttribute(unsigned index, const Variant& value)
 {
     const Vector<AttributeInfo>* attributes = GetAttributes();
     if (!attributes)
     {
-        LOGERROR(GetTypeName() + " has no attributes");
+        URHO3D_LOGERROR(GetTypeName() + " has no attributes");
         return false;
     }
     if (index >= attributes->Size())
     {
-        LOGERROR("Attribute index out of bounds");
+        URHO3D_LOGERROR("Attribute index out of bounds");
         return false;
     }
 
@@ -458,8 +609,8 @@ bool Serializable::SetAttribute(unsigned index, const Variant& value)
     }
     else
     {
-        LOGERROR("Could not set attribute " + attr.name_ + ": expected type " + Variant::GetTypeName(attr.type_) +
-            " but got " + value.GetTypeName());
+        URHO3D_LOGERROR("Could not set attribute " + attr.name_ + ": expected type " + Variant::GetTypeName(attr.type_) +
+                 " but got " + value.GetTypeName());
         return false;
     }
 }
@@ -469,7 +620,7 @@ bool Serializable::SetAttribute(const String& name, const Variant& value)
     const Vector<AttributeInfo>* attributes = GetAttributes();
     if (!attributes)
     {
-        LOGERROR(GetTypeName() + " has no attributes");
+        URHO3D_LOGERROR(GetTypeName() + " has no attributes");
         return false;
     }
 
@@ -485,14 +636,14 @@ bool Serializable::SetAttribute(const String& name, const Variant& value)
             }
             else
             {
-                LOGERROR("Could not set attribute " + i->name_ + ": expected type " + Variant::GetTypeName(i->type_)
-                    + " but got " + value.GetTypeName());
+                URHO3D_LOGERROR("Could not set attribute " + i->name_ + ": expected type " + Variant::GetTypeName(i->type_)
+                         + " but got " + value.GetTypeName());
                 return false;
             }
         }
     }
 
-    LOGERROR("Could not find attribute " + name + " in " + GetTypeName());
+    URHO3D_LOGERROR("Could not find attribute " + name + " in " + GetTypeName());
     return false;
 }
 
@@ -573,7 +724,7 @@ void Serializable::WriteInitialDeltaUpdate(Serializer& dest, unsigned char timeS
 {
     if (!networkState_)
     {
-        LOGERROR("WriteInitialDeltaUpdate called without allocated NetworkState");
+        URHO3D_LOGERROR("WriteInitialDeltaUpdate called without allocated NetworkState");
         return;
     }
 
@@ -607,7 +758,7 @@ void Serializable::WriteDeltaUpdate(Serializer& dest, const DirtyBits& attribute
 {
     if (!networkState_)
     {
-        LOGERROR("WriteDeltaUpdate called without allocated NetworkState");
+        URHO3D_LOGERROR("WriteDeltaUpdate called without allocated NetworkState");
         return;
     }
 
@@ -633,7 +784,7 @@ void Serializable::WriteLatestDataUpdate(Serializer& dest, unsigned char timeSta
 {
     if (!networkState_)
     {
-        LOGERROR("WriteLatestDataUpdate called without allocated NetworkState");
+        URHO3D_LOGERROR("WriteLatestDataUpdate called without allocated NetworkState");
         return;
     }
 
@@ -741,12 +892,12 @@ Variant Serializable::GetAttribute(unsigned index) const
     const Vector<AttributeInfo>* attributes = GetAttributes();
     if (!attributes)
     {
-        LOGERROR(GetTypeName() + " has no attributes");
+        URHO3D_LOGERROR(GetTypeName() + " has no attributes");
         return ret;
     }
     if (index >= attributes->Size())
     {
-        LOGERROR("Attribute index out of bounds");
+        URHO3D_LOGERROR("Attribute index out of bounds");
         return ret;
     }
 
@@ -761,7 +912,7 @@ Variant Serializable::GetAttribute(const String& name) const
     const Vector<AttributeInfo>* attributes = GetAttributes();
     if (!attributes)
     {
-        LOGERROR(GetTypeName() + " has no attributes");
+        URHO3D_LOGERROR(GetTypeName() + " has no attributes");
         return ret;
     }
 
@@ -774,7 +925,7 @@ Variant Serializable::GetAttribute(const String& name) const
         }
     }
 
-    LOGERROR("Could not find attribute " + name + " in " + GetTypeName());
+    URHO3D_LOGERROR("Could not find attribute " + name + " in " + GetTypeName());
     return ret;
 }
 
@@ -783,12 +934,12 @@ Variant Serializable::GetAttributeDefault(unsigned index) const
     const Vector<AttributeInfo>* attributes = GetAttributes();
     if (!attributes)
     {
-        LOGERROR(GetTypeName() + " has no attributes");
+        URHO3D_LOGERROR(GetTypeName() + " has no attributes");
         return Variant::EMPTY;
     }
     if (index >= attributes->Size())
     {
-        LOGERROR("Attribute index out of bounds");
+        URHO3D_LOGERROR("Attribute index out of bounds");
         return Variant::EMPTY;
     }
 
@@ -806,7 +957,7 @@ Variant Serializable::GetAttributeDefault(const String& name) const
     const Vector<AttributeInfo>* attributes = GetAttributes();
     if (!attributes)
     {
-        LOGERROR(GetTypeName() + " has no attributes");
+        URHO3D_LOGERROR(GetTypeName() + " has no attributes");
         return Variant::EMPTY;
     }
 
@@ -816,7 +967,7 @@ Variant Serializable::GetAttributeDefault(const String& name) const
             return i->defaultValue_;
     }
 
-    LOGERROR("Could not find attribute " + name + " in " + GetTypeName());
+    URHO3D_LOGERROR("Could not find attribute " + name + " in " + GetTypeName());
     return Variant::EMPTY;
 }
 
@@ -856,7 +1007,7 @@ void Serializable::SetInstanceDefault(const String& name, const Variant& default
     // Allocate the instance level default value
     if (!instanceDefaultValues_)
         instanceDefaultValues_ = new VariantMap();
-    instanceDefaultValues_->operator[] (name) = defaultValue;
+    instanceDefaultValues_->operator [](name) = defaultValue;
 }
 
 Variant Serializable::GetInstanceDefault(const String& name) const

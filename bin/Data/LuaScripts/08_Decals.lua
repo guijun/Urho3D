@@ -194,7 +194,7 @@ function PaintDecal()
     local hitPos, hitDrawable = Raycast(250.0)
     if hitDrawable ~= nil then
         -- Check if target scene node already has a DecalSet component. If not, create now
-        local targetNode = hitDrawable:GetNode()
+        local targetNode = hitDrawable.node
         local decal = targetNode:GetComponent("DecalSet")
         if decal == nil then
             decal = targetNode:CreateComponent("DecalSet")
@@ -232,7 +232,7 @@ end
 
 function HandleUpdate(eventType, eventData)
     -- Take the frame time step, which is stored as a float
-    local timeStep = eventData:GetFloat("TimeStep")
+    local timeStep = eventData["TimeStep"]:GetFloat()
 
     -- Move the camera, scale movement with time step
     MoveCamera(timeStep)
